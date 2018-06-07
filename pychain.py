@@ -1,6 +1,7 @@
-# pychain.py
+# pychain/pychain.py
 
 import hashlib
+import json
 from datetime import datetime, timezone
 
 class Block:
@@ -15,7 +16,7 @@ class Block:
             - previous_hash (bytes): A reference to the hash of the previous block. 
                 This value explicitly defines the previous block.
             - timestamp (datetime): A timestamp
-            - data (bytes): Any data that is included in the block
+            - data (str): Any data that is included in the block
         '''
         self.index = index
         self.previous_hash = previous_hash
@@ -34,10 +35,9 @@ class Block:
         hasher.update(index.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
         if previous_hash is not None:
             hasher.update(previous_hash)
-        ts_num, ts_denom = timestamp.timestamp().as_integer_ratio()
-        hasher.update(ts_num.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
-        hasher.update(ts_denom.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
-        hasher.update(data)
+        ts_int = int(timestamp.timestamp())
+        hasher.update(ts_int.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
+        hasher.update(data.encode('utf-8'))
         return hasher.digest()
 
     @staticmethod
@@ -47,7 +47,7 @@ class Block:
     @staticmethod
     def genesis_block():
         timestamp = datetime.fromtimestamp(1528359030, tz=timezone.utc)
-        return Block(0, None, timestamp, b'The story begins here!')
+        return Block(0, None, timestamp, 'The story begins here!')
 
     @staticmethod
     def is_genesis(block):
@@ -70,13 +70,37 @@ class Block:
             return False
         return True
 
+    def as_dict(self):
+        return {
+            'index': self.index,
+            'previous_hash': self.previous_hash.hex() if self.previous_hash is not None else None,
+            'timestamp': int(self.timestamp.timestamp()),
+            'data': self.data,
+            'hash': self.hash.hex()
+        }
+
+    def as_json(self):
+        return json.dumps(self.as_dict())
+
+    @staticmethod
+    def from_dict(json_obj):
+        return Block(index=json_obj['index'], 
+            previous_hash=bytes.fromhex(json_obj['previous_hash']) if json_obj['previous_hash'] is not None else None, 
+            timestamp=datetime.fromtimestamp(json_obj['timestamp'], tz=timezone.utc),
+            data=json_obj['data'])
+
+    @staticmethod
+    def from_json(json_str):
+        json_obj = json.loads(json_str)
+        return Block.from_dict(json_obj)
+
     @staticmethod
     def is_valid_block_structure(block):
         return (isinstance(block.index, int) 
             and isinstance(block.hash, bytes) 
             and (isinstance(block.previous_hash, bytes) if block.previous_hash is not None else True)
             and isinstance(block.timestamp, datetime) 
-            and isinstance(block.data, bytes))
+            and isinstance(block.data, str))
 
 class BlockChain:
 
@@ -131,3 +155,9 @@ class BlockChain:
         else:
             print('Received blockchain is invalid.')
             return False
+
+    def as_json(self):
+        return json.dumps(self.as_list())
+
+    def as_list(self):
+        return [block.as_dict() for block in self.blocks]
