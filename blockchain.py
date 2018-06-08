@@ -102,7 +102,7 @@ class Block:
             and isinstance(block.timestamp, datetime) 
             and isinstance(block.data, str))
 
-class BlockChain:
+class Blockchain:
 
     def __init__(self):
         self.blocks = [Block.genesis_block()]
@@ -125,7 +125,7 @@ class BlockChain:
         return True
 
     def is_valid(self):
-        return BlockChain.is_valid_chain(self.blocks)
+        return Blockchain.is_valid_chain(self.blocks)
 
     def add_block(self, block):
         if not isinstance(block, Block):
@@ -146,7 +146,7 @@ class BlockChain:
 
     def replace(self, new_blocks):
         if (isinstance(new_blocks, list) 
-            and BlockChain.is_valid_chain(new_blocks) 
+            and Blockchain.is_valid_chain(new_blocks) 
             and len(new_blocks) > len(self.blocks)):
             print('Received blockchain is valid. Replacing current blockchain with received blockchain.')
             self.blocks = new_blocks
@@ -161,3 +161,8 @@ class BlockChain:
 
     def as_list(self):
         return [block.as_dict() for block in self.blocks]
+
+blockchain = Blockchain()
+
+def get_blockchain():
+    return blockchain
