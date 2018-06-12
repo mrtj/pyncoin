@@ -5,62 +5,83 @@ import json
 from blockchain import Block, Blockchain, get_blockchain
 
 from twisted.internet import reactor
+from autobahn.twisted.websocket import WebSocketAdapterProtocol
+from autobahn.websocket.protocol import WebSocketProtocol
 from autobahn.twisted.websocket import WebSocketServerProtocol, WebSocketServerFactory, listenWS
 from autobahn.twisted.websocket import WebSocketClientProtocol, WebSocketClientFactory, connectWS
 
 class Message:
+    ''' Represents a message sent on the blockchain p2p protocol. '''
 
+    # Message types:
     QUERY_LATEST = 0
     QUERY_ALL = 1
     RESPONSE_BLOCKCHAIN = 2
 
     def __init__(self, message_type, data):
+        ''' Initializes the Message.
+        Parameters:
+            - message_type (int): The message type.
+            - data (any): A json-serializable data object
+        '''
         self.message_type = message_type
         self.data = data
 
     def as_dict(self):
+        ''' Converts the Message to a dictionary. '''
         return {
             'type': self.message_type,
             'data': self.data
         }
 
     def as_json(self):
+        ''' Converts the Message to a json string. '''
         return json.dumps(self.as_dict())
 
     def as_bin(self):
+        ''' Converts the Message to a binary format. '''
         return self.as_json().encode('utf-8')
 
     @staticmethod
     def from_dict(json_obj):
+        ''' Returns a new Message initialized from a dictionary. '''
         return Message(json_obj['type'], json_obj['data'])
 
     @staticmethod
     def from_json(json_str):
+        ''' Returns a new Message initialized from a json string. '''
         return Message.from_dict(json.loads(json_str))
 
     @staticmethod
     def from_bin(json_bin):
+        ''' Returns a new Message initialized from the binary format. '''
         return Message.from_json(json_bin.decode('utf-8'))
 
     @staticmethod
     def query_chain_length_message():
+        ''' Creates a new "query latest block" message. '''
         return Message(Message.QUERY_LATEST, None)
 
     @staticmethod
     def query_all_message():
+        ''' Creates a new "query blockchain" message. '''
         return Message(Message.QUERY_ALL, None)
 
     @staticmethod
     def response_chain_message(blockchain):
+        ''' Creates a new "blockchain response" message. '''
         return Message(Message.RESPONSE_BLOCKCHAIN, blockchain.as_list())
 
     @staticmethod 
     def response_latest_message(blockchain):
+        ''' Creates a new "latest block response" message. '''
         return Message(Message.RESPONSE_BLOCKCHAIN, [blockchain.get_latest().as_dict()])
 
 # ----------------------------
 
 class Engine:
+    ''' The business logic of the p2p client that interacts with the 
+    current copy of the blockchain.'''
 
     def __init__(self, blockchain):
         self.blockchain = blockchain
@@ -112,48 +133,33 @@ class Engine:
 
 
 class Broadcaster:
+    ''' Administers the clients connected to this node and broadcasts messages to all of them.'''
 
     def __init__(self):
-        self.remote_clients = []
-        self.local_clients = []
+        self.clients = []
 
-    def remote_peers(self):
-        return [client.peer for client in self.remote_clients]
+    def peers(self):
+        return [client.peer for client in self.clients]
 
-    def local_peers(self):
-        return [client.peer for client in self.local_clients]
+    def register_client(self, client):
+        if client.peer not in self.peers():
+            print("registered client {}".format(client.peer))
+            self.clients.append(client)
 
-    def register_remote_client(self, remote_client):
-        if remote_client.peer not in self.remote_peers():
-            print("registered remote client {}".format(remote_client.peer))
-            self.remote_clients.append(remote_client)
-
-    def unregister_remote_client(self, remote_client):
-        if remote_client.peer in self.remote_peers():
-            print("unregistered remote client {}".format(remote_client.peer))
-            self.remote_clients.remove(remote_client)
-
-    def register_local_client(self, local_client):
-        if local_client.peer not in self.local_peers():
-            print("registered local client {}".format(local_client.peer))
-            self.local_clients.append(local_client)
-
-    def unregister_local_client(self, local_client):
-        if local_client.peer in self.local_peers():
-            print("unregistered remote client {}".format(local_client.peer))
-            self.local_clients.remove(local_client)
+    def unregister_client(self, client):
+        if client.peer in self.peers():
+            print("unregistered remote client {}".format(client.peer))
+            self.clients.remove(client)
 
     def broadcast(self, protocol, message):
         print("broadcasting message '{}' ..".format(message.as_json()))
         preparedMsg = protocol.factory.prepareMessage(message.as_bin())
-        for client in self.local_clients + self.remote_clients:
+        for client in self.clients:
             client.send_prepared_message(preparedMsg)
             print("message sent to client {}".format(client.peer))
 
-    def peers(self):
-        return [client.peer for client in self.local_clients + self.remote_clients]
-
 class IChannel:
+    ''' Abstract interface of a websocket communication channel. '''
 
     def send_message(self, message):
         raise AssertionError('IBlockchainTransport.sendMessage abstract method called.')
@@ -169,99 +175,77 @@ class IChannel:
 
 # ---------
 
-class ServerFactory(WebSocketServerFactory):
+class BlockchainFactory:
+    ''' Base class for ServerFactory and ClientFactory. 
+    These classes create ServerProtocol or ClientProtocol instances. '''
+
+    def __init__(self, engine, broadcaster):
+        self.engine = engine
+        self.broadcaster = broadcaster
+
+class BlockchainPrototocol(WebSocketAdapterProtocol, WebSocketProtocol, IChannel):
+    ''' Base class for both ServerProtocol and ClientProtocol. 
+    This class is responsibile to handle a single peer, both as a server or as a client. '''
+
+    def onConnect(self, response):
+        print("Protocol connected: {0}".format(response.peer))
+
+    def onOpen(self):
+        print("WebSocket connection open.")
+        # pylint: disable=maybe-no-member
+        self.factory.broadcaster.register_client(self)
+        self.factory.engine.handle_socket_open(self)
+
+    def onMessage(self, payload, isBinary):
+        if not payload:
+            print('Empty message received')
+            return
+        message = Message.from_bin(payload)
+        print('Received message: {}'.format(message.as_json()))
+        # pylint: disable=maybe-no-member
+        self.factory.engine.handle_message(self, message)
+
+    def onClose(self, wasClean, code, reason):
+        print("WebSocket connection closed: {0}".format(reason))
+        # pylint: disable=maybe-no-member
+        self.factory.engine.handle_socket_close(self)
+        self.factory.broadcaster.unregister_client(self)
+
+    # IChannel impl
+
+    def send_message(self, message):
+        self.sendMessage(message.as_bin())
+
+    def send_prepared_message(self, message):
+        self.sendPreparedMessage(message)
+
+    def broadcast(self, message):
+        # pylint: disable=maybe-no-member
+        self.factory.broadcaster.broadcast(self, message)
+
+
+class ServerFactory(BlockchainFactory, WebSocketServerFactory):
 
     def __init__(self, url, engine, broadcaster):
+        BlockchainFactory.__init__(self, engine, broadcaster)
         WebSocketServerFactory.__init__(self, url)
-        self.engine = engine
-        self.broadcaster = broadcaster
 
-class ServerProtocol(WebSocketServerProtocol, IChannel):
-
-    def onConnect(self, response):
-        print("Server connected: {0}".format(response.peer))
-
-    def onOpen(self):
-        print("WebSocket connection open.")
-        # pylint: disable=maybe-no-member
-        self.factory.broadcaster.register_remote_client(self)
-        self.factory.engine.handle_socket_open(self)
-
-    def onMessage(self, payload, isBinary):
-        if not payload:
-            print('Empty message received')
-            return
-        message = Message.from_bin(payload)
-        print('Received message: {}'.format(message.as_json()))
-        # pylint: disable=maybe-no-member
-        self.factory.engine.handle_message(self, message)
-
-    def onClose(self, wasClean, code, reason):
-        print("WebSocket connection closed: {0}".format(reason))
-        # pylint: disable=maybe-no-member
-        self.factory.engine.handle_socket_close(self)
-        self.factory.broadcaster.unregister_remote_client(self)
-
-    # IChannel impl
-
-    def send_message(self, message):
-        self.sendMessage(message.as_bin())
-
-    def send_prepared_message(self, message):
-        self.sendPreparedMessage(message)
-
-    def broadcast(self, message):
-        # pylint: disable=maybe-no-member
-        self.factory.broadcaster.broadcast(self, message)
+class ServerProtocol(BlockchainPrototocol, WebSocketServerProtocol):
+    pass
 
 
-class ClientFactory(WebSocketClientFactory):
+class ClientFactory(BlockchainFactory, WebSocketClientFactory):
 
-    def __init__(self, url, engine, broadcaster, reactor):
-        WebSocketClientFactory.__init__(self, url=url, reactor=reactor)
-        self.engine = engine
-        self.broadcaster = broadcaster
+    def __init__(self, url, engine, broadcaster):
+        BlockchainFactory.__init__(self, engine, broadcaster)
+        WebSocketClientFactory.__init__(self, url=url)
 
-class ClientProtocol(WebSocketClientProtocol):
-
-    def onConnect(self, response):
-        print("Client connected: {0}".format(response.peer))
-
-    def onOpen(self):
-        print("WebSocket connection open.")
-        # pylint: disable=maybe-no-member
-        self.factory.broadcaster.register_local_client(self)
-        self.factory.engine.handle_socket_open(self)
-
-    def onMessage(self, payload, isBinary):
-        if not payload:
-            print('Empty message received')
-            return
-        message = Message.from_bin(payload)
-        print('Received message: {}'.format(message.as_json()))
-        # pylint: disable=maybe-no-member
-        self.factory.engine.handle_message(self, message)
-
-    def onClose(self, wasClean, code, reason):
-        print("WebSocket connection closed: {0}".format(reason))
-        # pylint: disable=maybe-no-member
-        self.factory.engine.handle_socket_close(self)
-        self.factory.broadcaster.unregister_local_client(self)
-
-    # IChannel impl
-
-    def send_message(self, message):
-        self.sendMessage(message.as_bin())
-
-    def send_prepared_message(self, message):
-        self.sendPreparedMessage(message)
-
-    def broadcast(self, message):
-        # pylint: disable=maybe-no-member
-        self.factory.broadcaster.broadcast(self, message)
+class ClientProtocol(BlockchainPrototocol, WebSocketClientProtocol):
+    pass
 
 
 class Application:
+    ''' The external interface of the p2p node. '''
 
     def __init__(self, reactor):
         self.blockchain = get_blockchain()
@@ -275,7 +259,7 @@ class Application:
         listenWS(server_factory)
 
     def connect_to_peer(self, url):
-        client_factory = ClientFactory(url, self.engine, self.broadcaster, self.reactor)
+        client_factory = ClientFactory(url, self.engine, self.broadcaster)
         client_factory.protocol = ClientProtocol
         connectWS(client_factory)
 
@@ -285,20 +269,3 @@ class Application:
 from twisted.internet import reactor
 
 application = Application(reactor)
-
-# class BlockchainServer(WebSocketServer):
-
-#     def peers(self):
-#         return ['{}:{}'.format(client.address[0], client.address[1]) for client in self.clients.values()]
-
-#     def connect_to_peer(self, address):
-#         print('Creating socket connection...')
-#         sock = socket.create_connection(address)
-#         print('handling new socket...')
-#         self.handle(sock, address)
-
-# server = BlockchainServer(
-#     ('', 8001),
-#     Resource(OrderedDict([('/', BlockchainApplication)]))
-# )
-
