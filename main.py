@@ -1,14 +1,37 @@
 # pchain/main.py
 
-import threading
-from gevent import monkey
+import argparse
+import sys
 
-from webserver import server as web_server
-from p2p import server as p2p_server
+from twisted.internet import reactor
+from twisted.web.server import Site
+from twisted.web.wsgi import WSGIResource
+
+from webserver import app as web_application
+from p2p import application as p2p_application
+
+from twisted.internet.defer import setDebugging
+from twisted.logger import Logger, globalLogPublisher, textFileLogObserver
+
+log_output = textFileLogObserver(sys.stdout)
+globalLogPublisher.addObserver(log_output)
 
 if __name__ == '__main__':
-    monkey.patch_thread()
-    t = threading.Thread(target=p2p_server.serve_forever)
-    t.setDaemon(True)
-    t.start()
-    web_server.serve_forever()
+
+    setDebugging(True)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('webport', help='web server port', default=5000, type=int)
+    parser.add_argument('p2pport', help='p2p server port', default=5999, type=int)
+    args = parser.parse_args()
+
+    server_url = 'ws://127.0.0.1:{}'.format(args.p2pport)
+    print('Starting p2p server at {}'.format(server_url))
+    p2p_application.start_server(server_url)
+    
+    # pylint: disable=maybe-no-member
+    resource = WSGIResource(reactor, reactor.getThreadPool(), web_application)
+    site = Site(resource)
+    print('Starting web server at http://127.0.0.1:{}'.format(args.webport))
+    reactor.listenTCP(args.webport, site)
+    reactor.run()
