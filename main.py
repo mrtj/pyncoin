@@ -1,5 +1,7 @@
 # pchain/main.py
 
+''' Implements the CLI of the blockchain node '''
+
 import argparse
 import sys
 
@@ -22,7 +24,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('webport', help='web server port', default=5000, type=int)
-    parser.add_argument('p2pport', help='p2p server port', default=5999, type=int)
+    parser.add_argument('p2pport', help='p2p server port', default=6000, type=int)
     args = parser.parse_args()
 
     server_url = 'ws://127.0.0.1:{}'.format(args.p2pport)

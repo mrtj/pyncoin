@@ -1,5 +1,7 @@
 # pychain/p2p.py
 
+''' Implements the p2p node of the blockchain. '''
+
 import json
 
 from blockchain import Block, Blockchain, get_blockchain

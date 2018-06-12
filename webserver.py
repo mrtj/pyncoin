@@ -1,5 +1,7 @@
 # pychain/server.py
 
+''' Implements the web server controller interface. '''
+
 from flask import Flask, request, jsonify, abort
 from blockchain import Block, Blockchain, get_blockchain
 from p2p import application as p2p_application

@@ -4,9 +4,13 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-class Block:
+''' Implements the business logic of the blockchain. '''
 
-    INT_SIZE = 8 # bytes
+class Block:
+    ''' Represents a block in the blockchain. A block can contain arbitrary data
+    in the format of a unicode string. '''
+
+    INT_SIZE = 8
     BYTE_ORDER = 'big'
 
     def __init__(self, index, previous_hash, timestamp, data):
