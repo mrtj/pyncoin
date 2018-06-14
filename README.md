@@ -68,7 +68,7 @@ curl http://127.0.0.1:5000/peers
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE.md file for details
+This project is licensed under the MIT License - see the LICENSE file for details
 
 ## Acknowledgments
 
