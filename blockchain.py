@@ -3,6 +3,7 @@
 import hashlib
 import json
 from datetime import datetime, timezone
+from bitstring import BitArray
 
 ''' Implements the business logic of the blockchain. '''
 
@@ -13,7 +14,7 @@ class Block:
     INT_SIZE = 8
     BYTE_ORDER = 'big'
 
-    def __init__(self, index, previous_hash, timestamp, data):
+    def __init__(self, index, previous_hash, timestamp, data, difficulty, nonce):
         '''Initializes the block.
         Params:
             - index (int): The height of the block in the blockchain
@@ -21,11 +22,15 @@ class Block:
                 This value explicitly defines the previous block.
             - timestamp (datetime): A timestamp
             - data (str): Any data that is included in the block
+            - difficulty (int): The difficulty of the Proof of Work algorithm
+            - nonce (int): The nonce of the block
         '''
         self.index = index
         self.previous_hash = previous_hash
         self.timestamp = timestamp
         self.data = data
+        self.difficulty = difficulty
+        self.nonce = nonce
         self.hash = Block.calculate_hash_for_block(self)
 
     def __eq__(self, other):
@@ -34,7 +39,7 @@ class Block:
         return False
 
     @staticmethod
-    def calculate_hash(index, previous_hash, timestamp, data):
+    def calculate_hash(index, previous_hash, timestamp, data, difficulty, nonce):
         hasher = hashlib.sha256()
         hasher.update(index.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
         if previous_hash is not None:
@@ -42,35 +47,65 @@ class Block:
         ts_int = int(timestamp.timestamp())
         hasher.update(ts_int.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
         hasher.update(data.encode('utf-8'))
+        hasher.update(difficulty.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
+        hasher.update(nonce.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
         return hasher.digest()
 
     @staticmethod
     def calculate_hash_for_block(block):
-        return Block.calculate_hash(block.index, block.previous_hash, block.timestamp, block.data)
+        return Block.calculate_hash(block.index, block.previous_hash, block.timestamp, 
+                                    block.data, block.difficulty, block.nonce)
+
+    @staticmethod
+    def find(index, previous_hash, timestamp, data, difficulty):
+        nonce = 0
+        while True:
+            hash = Block.calculate_hash(index, previous_hash, timestamp, data, difficulty, nonce)
+            if Block.hash_matches_difficulty(hash, difficulty):
+                return Block(index, previous_hash, timestamp, data, difficulty, nonce)
+            nonce += 1
 
     @staticmethod
     def genesis_block():
         timestamp = datetime.fromtimestamp(1528359030, tz=timezone.utc)
-        return Block(0, None, timestamp, 'The story begins here!')
+        return Block(0, None, timestamp, 'The story begins here!', 0, 0)
+
+    @staticmethod
+    def hash_matches_difficulty(hash, difficulty):
+        bits = BitArray(bytes=hash)
+        required_prefix = '0' * difficulty
+        return bits.bin.startswith(required_prefix)
+
+    def hash_matches_block_content(self):
+        return Block.calculate_hash_for_block(self) == self.hash
+
+    def has_valid_hash(self):
+        if not self.hash_matches_block_content():
+            print('invalid hash')
+            return False
+        elif not Block.hash_matches_difficulty(self.hash, self.difficulty):
+            print('block difficulty not satisfied. Expected: {}, got: {}'.format(self.difficulty, self.hash))
+            return False
+        return True
 
     @staticmethod
     def is_genesis(block):
         return block == Block.genesis_block()
 
-    def generate_next(self, data):
-        next_index = self.index + 1
-        next_timestamp = datetime.utcnow()
-        return Block(next_index, self.hash, next_timestamp, data)
-
     def is_valid_next(self, next_block):
-        if self.index + 1 != next_block.index:
+        if not Block.is_valid_block_structure(next_block):
+            print('invalid structure')
+            return False
+        elif self.index + 1 != next_block.index:
             print('invalid index')
             return False
         elif self.hash != next_block.previous_hash:
             print('invalid previous hash')
             return False
-        elif Block.calculate_hash_for_block(next_block) != next_block.hash:
-            print('invalid hash: {} {}'.format(Block.calculate_hash_for_block(next_block), next_block.hash))
+        elif not Block.is_valid_timestamp(next_block, self):
+            print('invalid timestamp')
+            return False
+        elif not next_block.has_valid_hash():
             return False
         return True
 
@@ -80,6 +115,8 @@ class Block:
             'previous_hash': self.previous_hash.hex() if self.previous_hash is not None else None,
             'timestamp': int(self.timestamp.timestamp()),
             'data': self.data,
+            'difficulty': self.difficulty,
+            'nonce': self.nonce,
             'hash': self.hash.hex()
         }
 
@@ -91,7 +128,9 @@ class Block:
         return Block(index=json_obj['index'], 
             previous_hash=bytes.fromhex(json_obj['previous_hash']) if json_obj['previous_hash'] is not None else None, 
             timestamp=datetime.fromtimestamp(json_obj['timestamp'], tz=timezone.utc),
-            data=json_obj['data'])
+            data=json_obj['data'],
+            difficulty=json_obj['difficulty'],
+            nonce=json_obj['nonce'])
 
     @staticmethod
     def from_json(json_str):
@@ -104,12 +143,23 @@ class Block:
             and isinstance(block.hash, bytes) 
             and (isinstance(block.previous_hash, bytes) if block.previous_hash is not None else True)
             and isinstance(block.timestamp, datetime) 
-            and isinstance(block.data, str))
+            and isinstance(block.data, str)
+            and isinstance(block.difficulty, int)
+            and isinstance(block.nonce, int))
+
+    @staticmethod
+    def is_valid_timestamp(new_block, previous_block):
+        return ((previous_block.timestamp - new_block.timestamp).total_seconds() < 60 
+            and (new_block.timestamp - datetime.now(tz=timezone.utc)).total_seconds() < 60)
 
 class Blockchain:
 
+    BLOCK_GENERATION_INTERVAL = 10 # in seconds
+    DIFFICULTY_ADJUSTMENT_INTERVAL = 10 # in blocks
+
     def __init__(self):
         self.blocks = [Block.genesis_block()]
+        self.p2p_application = None
 
     def get_latest(self):
         return self.blocks[-1]
@@ -140,13 +190,18 @@ class Blockchain:
         return False
 
     def generate_next(self, data):
-        next_block = self.get_latest().generate_next(data)
+        previous_block = self.get_latest()
+        next_index = previous_block.index + 1
+        next_timestamp = datetime.now(tz=timezone.utc)
+        difficulty = self.get_difficulty()
+        print('Blockchain.generate_next: difficulty = {}'.format(difficulty))
+        next_block = Block.find(next_index, previous_block.hash, next_timestamp, data, difficulty)
         self.add_block(next_block)
         self.broadcast_latest()
         return next_block
 
     def broadcast_latest(self):
-        pass
+        self.p2p_application.broadcast_latest(self)
 
     def replace(self, new_blocks):
         if (isinstance(new_blocks, list) 
@@ -166,7 +221,23 @@ class Blockchain:
     def as_list(self):
         return [block.as_dict() for block in self.blocks]
 
-blockchain = Blockchain()
+    def get_difficulty(self):
+        latest_block = self.get_latest()
+        if latest_block.index % Blockchain.DIFFICULTY_ADJUSTMENT_INTERVAL == 0 and latest_block.index != 0:
+            return self.get_adjusted_difficulty()
+        else:
+            return latest_block.difficulty
 
-def get_blockchain():
-    return blockchain
+    def get_adjusted_difficulty(self):
+        prev_adjusment_block = self.blocks[max(0, len(self.blocks) - Blockchain.DIFFICULTY_ADJUSTMENT_INTERVAL)]
+        latest_block = self.get_latest()
+        time_expected = Blockchain.BLOCK_GENERATION_INTERVAL * Blockchain.DIFFICULTY_ADJUSTMENT_INTERVAL
+        time_taken = (latest_block.timestamp - prev_adjusment_block.timestamp).total_seconds()
+        print('prev_adjusment_block.idx: {}, latest_block.idx: {}'.format(prev_adjusment_block.index, latest_block.index))
+        print('time_taken: {}, time_expected: {}'.format(time_taken, time_expected))
+        if time_taken < time_expected / 2:
+            return prev_adjusment_block.difficulty + 1
+        elif time_taken > time_expected * 2:
+            return max(prev_adjusment_block.difficulty - 1, 0)
+        else:
+            return prev_adjusment_block.difficulty

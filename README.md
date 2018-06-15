@@ -72,4 +72,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-Many thanks to Lauri Hartikka for his original [tutorial](https://lhartikk.github.io) of Naivecoin
+Many thanks to Lauri Hartikka for his original [tutorial](https://lhartikk.github.io) of Naivecoin.

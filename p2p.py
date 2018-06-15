@@ -4,9 +4,8 @@
 
 import json
 
-from blockchain import Block, Blockchain, get_blockchain
+from blockchain import Block, Blockchain
 
-from twisted.internet import reactor
 from autobahn.twisted.websocket import WebSocketAdapterProtocol
 from autobahn.websocket.protocol import WebSocketProtocol
 from autobahn.twisted.websocket import WebSocketServerProtocol, WebSocketServerFactory, listenWS
@@ -153,9 +152,11 @@ class Broadcaster:
             print("unregistered remote client {}".format(client.peer))
             self.clients.remove(client)
 
-    def broadcast(self, protocol, message):
+    def broadcast(self, message):
         print("broadcasting message '{}' ..".format(message.as_json()))
-        preparedMsg = protocol.factory.prepareMessage(message.as_bin())
+        if not self.clients:
+            return
+        preparedMsg = self.clients[0].factory.prepareMessage(message.as_bin())
         for client in self.clients:
             client.send_prepared_message(preparedMsg)
             print("message sent to client {}".format(client.peer))
@@ -223,7 +224,7 @@ class BlockchainPrototocol(WebSocketAdapterProtocol, WebSocketProtocol, IChannel
 
     def broadcast(self, message):
         # pylint: disable=maybe-no-member
-        self.factory.broadcaster.broadcast(self, message)
+        self.factory.broadcaster.broadcast(message)
 
 
 class ServerFactory(BlockchainFactory, WebSocketServerFactory):
@@ -245,15 +246,12 @@ class ClientFactory(BlockchainFactory, WebSocketClientFactory):
 class ClientProtocol(BlockchainPrototocol, WebSocketClientProtocol):
     pass
 
-
 class Application:
     ''' The external interface of the p2p node. '''
 
-    def __init__(self, reactor):
-        self.blockchain = get_blockchain()
-        self.engine = Engine(self.blockchain)
+    def __init__(self, blockchain):
+        self.engine = Engine(blockchain)
         self.broadcaster = Broadcaster()
-        self.reactor = reactor
 
     def start_server(self, url):
         server_factory = ServerFactory(url, self.engine, self.broadcaster)
@@ -268,6 +266,8 @@ class Application:
     def peers(self):
         return self.broadcaster.peers()
 
-from twisted.internet import reactor
+    def broadcast_blockchain(self, blockchain):
+        self.broadcaster.broadcast(Message.response_chain_message(blockchain))
 
-application = Application(reactor)
+    def broadcast_latest(self, blockchain):
+        self.broadcaster.broadcast(Message.response_latest_message(blockchain))
