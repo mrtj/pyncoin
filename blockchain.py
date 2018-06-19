@@ -93,7 +93,7 @@ class Block:
         return block == Block.genesis_block()
 
     def is_valid_next(self, next_block):
-        if not Block.is_valid_block_structure(next_block):
+        if not next_block.has_valid_structure():
             print('invalid structure')
             return False
         elif self.index + 1 != next_block.index:
@@ -137,15 +137,14 @@ class Block:
         json_obj = json.loads(json_str)
         return Block.from_dict(json_obj)
 
-    @staticmethod
-    def is_valid_block_structure(block):
-        return (isinstance(block.index, int) 
-            and isinstance(block.hash, bytes) 
-            and (isinstance(block.previous_hash, bytes) if block.previous_hash is not None else True)
-            and isinstance(block.timestamp, datetime) 
-            and isinstance(block.data, str)
-            and isinstance(block.difficulty, int)
-            and isinstance(block.nonce, int))
+    def has_valid_structure(self):
+        return (isinstance(self.index, int) 
+            and isinstance(self.hash, bytes) 
+            and (isinstance(self.previous_hash, bytes) if self.previous_hash is not None else True)
+            and isinstance(self.timestamp, datetime) 
+            and isinstance(self.data, str)
+            and isinstance(self.difficulty, int)
+            and isinstance(self.nonce, int))
 
     @staticmethod
     def is_valid_timestamp(new_block, previous_block):
