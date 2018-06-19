@@ -3,6 +3,7 @@
 import functools
 import hashlib
 import binascii
+import json
 
 import ecdsa
 
@@ -60,6 +61,26 @@ class TxOut:
         self.address = address
         self.amount = amount
 
+    def as_dict(self):
+        return {
+            'address': bytes_to_hex(self.address),
+            'amount': self.amount
+        }
+
+    @staticmethod
+    def from_dict(json_obj):
+        address = hex_to_bytes(json_obj['address'])
+        amount = json_obj['amount']
+        return TxOut(address, amount)
+
+    def as_json(self):
+        return json.dumps(self.as_dict())
+
+    @staticmethod
+    def from_json(json_str):
+        json_obj = json.loads(json_str)
+        return TxOut.from_dict(json_obj)
+
     @staticmethod
     def is_valid_address(address):
         if len(address) != 48:
@@ -85,6 +106,28 @@ class TxIn:
         self.tx_out_id = tx_out_id
         self.tx_out_index = tx_out_index
         self.signature = signature
+
+    def as_dict(self):
+        return {
+            'tx_out_id': bytes_to_hex(self.tx_out_id),
+            'tx_out_index': self.tx_out_index,
+            'signature': bytes_to_hex(self.signature)
+        }
+
+    @staticmethod
+    def from_dict(json_obj):
+        tx_out_id = hex_to_bytes(json_obj['tx_out_id'])
+        tx_out_index = json_obj['tx_out_index']
+        signature = hex_to_bytes(json_obj['signature'])
+        return TxIn(tx_out_id, tx_out_index, signature)
+
+    def as_json(self):
+        return json.dumps(self.as_dict())
+
+    @staticmethod
+    def from_json(json_str):
+        json_obj = json.loads(json_str)
+        return TxIn.from_dict(json_obj)
 
     def has_valid_structure(self):
         return (isinstance(self.signature, bytes)
@@ -156,7 +199,7 @@ class Transaction:
 
     COINBASE_AMOUNT = 50
 
-    def __init__(self, tx_ins, tx_outs):
+    def __init__(self, tx_ins, tx_outs, identifier=None):
         ''' Initializes the Transaction instance.
         Params:
             - tx_ins (list<TxIn>): The list of transaction inputs.
@@ -164,16 +207,38 @@ class Transaction:
         '''
         self.tx_ins = tx_ins
         self.tx_outs = tx_outs
-        self.id = self.get_id()
+        self.id = identifier if identifier is not None else self.get_id()
+
+    def as_dict(self):
+        return {
+            'tx_ins': [tx_in.as_dict() for tx_in in self.tx_ins],
+            'tx_outs': [tx_out.as_dict() for tx_out in self.tx_outs],
+            'id': bytes_to_hex(self.id)
+        }
+
+    @staticmethod
+    def from_dict(json_obj):
+        tx_ins = [TxIn.from_dict(tx_in_dict) for tx_in_dict in json_obj['tx_ins']]
+        tx_outs = [TxOut.from_dict(tx_out_dict) for tx_out_dict in json_obj['tx_outs']]
+        identifier = hex_to_bytes(json_obj['id'])
+        return Transaction(tx_ins, tx_outs, identifier)
+
+    def as_json(self):
+        return json.dumps(self.as_dict())
+
+    @staticmethod
+    def from_json(json_str):
+        json_obj = json.loads(json_str)
+        return Transaction.from_dict(json_obj)
 
     def get_id(self):
         hasher = hashlib.sha256()
         for tx_in in self.tx_ins:
             hasher.update(tx_in.tx_out_id)
-            hasher.update(str(tx_in.tx_out_index).encode('utf-8'))
+            hasher.update(int_to_bytes(tx_in.tx_out_index))
         for tx_out in self.tx_outs:
             hasher.update(tx_out.address)
-            hasher.update(str(tx_out.amount).encode('utf-8'))
+            hasher.update(int_to_bytes(tx_out.amount))
         return hasher.digest()
 
     def sign_inputs(self, tx_in_index, private_key, unspent_tx_outs):

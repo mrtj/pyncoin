@@ -5,6 +5,8 @@ import json
 from datetime import datetime, timezone
 from bitstring import BitArray
 
+from transaction import Transaction
+
 ''' Implements the business logic of the blockchain. '''
 
 class Block:
@@ -21,7 +23,7 @@ class Block:
             - previous_hash (bytes): A reference to the hash of the previous block. 
                 This value explicitly defines the previous block.
             - timestamp (datetime): A timestamp
-            - data (str): Any data that is included in the block
+            - data (list<Transaction>): The list of transactions to be included in the block
             - difficulty (int): The difficulty of the Proof of Work algorithm
             - nonce (int): The nonce of the block
         '''
@@ -31,7 +33,7 @@ class Block:
         self.data = data
         self.difficulty = difficulty
         self.nonce = nonce
-        self.hash = Block.calculate_hash_for_block(self)
+        self.hash = self.calculate_hash_for_block()
 
     def __eq__(self, other):
         if isinstance(self, other.__class__):
@@ -46,15 +48,15 @@ class Block:
             hasher.update(previous_hash)
         ts_int = int(timestamp.timestamp())
         hasher.update(ts_int.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
-        hasher.update(data.encode('utf-8'))
+        for tx in data:
+            hasher.update(tx.get_id())
         hasher.update(difficulty.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
         hasher.update(nonce.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
         return hasher.digest()
 
-    @staticmethod
-    def calculate_hash_for_block(block):
-        return Block.calculate_hash(block.index, block.previous_hash, block.timestamp, 
-                                    block.data, block.difficulty, block.nonce)
+    def calculate_hash_for_block(self):
+        return Block.calculate_hash(self.index, self.previous_hash, self.timestamp, 
+                                    self.data, self.difficulty, self.nonce)
 
     @staticmethod
     def find(index, previous_hash, timestamp, data, difficulty):
@@ -68,7 +70,7 @@ class Block:
     @staticmethod
     def genesis_block():
         timestamp = datetime.fromtimestamp(1528359030, tz=timezone.utc)
-        return Block(0, None, timestamp, 'The story begins here!', 0, 0)
+        return Block(0, None, timestamp, [], 0, 0)
 
     @staticmethod
     def hash_matches_difficulty(hash, difficulty):
@@ -76,11 +78,8 @@ class Block:
         required_prefix = '0' * difficulty
         return bits.bin.startswith(required_prefix)
 
-    def hash_matches_block_content(self):
-        return Block.calculate_hash_for_block(self) == self.hash
-
     def has_valid_hash(self):
-        if not self.hash_matches_block_content():
+        if self.calculate_hash_for_block() != self.hash:
             print('invalid hash')
             return False
         elif not Block.hash_matches_difficulty(self.hash, self.difficulty):
@@ -114,7 +113,7 @@ class Block:
             'index': self.index,
             'previous_hash': self.previous_hash.hex() if self.previous_hash is not None else None,
             'timestamp': int(self.timestamp.timestamp()),
-            'data': self.data,
+            'data': [tx.as_dict() for tx in self.data],
             'difficulty': self.difficulty,
             'nonce': self.nonce,
             'hash': self.hash.hex()
@@ -128,7 +127,7 @@ class Block:
         return Block(index=json_obj['index'], 
             previous_hash=bytes.fromhex(json_obj['previous_hash']) if json_obj['previous_hash'] is not None else None, 
             timestamp=datetime.fromtimestamp(json_obj['timestamp'], tz=timezone.utc),
-            data=json_obj['data'],
+            data=[Transaction.from_dict(tx) for tx in json_obj['data']],
             difficulty=json_obj['difficulty'],
             nonce=json_obj['nonce'])
 
@@ -142,7 +141,8 @@ class Block:
             and isinstance(self.hash, bytes) 
             and (isinstance(self.previous_hash, bytes) if self.previous_hash is not None else True)
             and isinstance(self.timestamp, datetime) 
-            and isinstance(self.data, str)
+            and isinstance(self.data, list)
+            and all([isinstance(tx, Transaction) for tx in self.data])
             and isinstance(self.difficulty, int)
             and isinstance(self.nonce, int))
 
@@ -159,6 +159,7 @@ class Blockchain:
     def __init__(self):
         self.blocks = [Block.genesis_block()]
         self.p2p_application = None
+        self.unspent_tx_outs = []
 
     def get_latest(self):
         return self.blocks[-1]
@@ -183,10 +184,14 @@ class Blockchain:
     def add_block(self, block):
         if not isinstance(block, Block):
             raise ValueError('Invalid block.')
-        if self.get_latest().is_valid_next(block):
-            self.blocks.append(block)
-            return True
-        return False
+        if not self.get_latest().is_valid_next(block):
+            return False
+        result = Transaction.process_transactions(block.data, self.unspent_tx_outs, block.index)
+        if result is None:
+            return False
+        self.blocks.append(block)
+        self.unspent_tx_outs = result
+        return True
 
     def generate_next(self, data):
         previous_block = self.get_latest()

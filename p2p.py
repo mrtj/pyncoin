@@ -112,7 +112,7 @@ class Engine:
             print('received block chain size of 0')
             return
         latest_block_received = received_blocks[-1]
-        if not Block.is_valid_block_structure(latest_block_received):
+        if not latest_block_received.has_valid_structure():
             print('block structure is not valid')
             return
         latest_block_held = self.blockchain.get_latest()
