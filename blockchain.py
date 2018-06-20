@@ -1,15 +1,16 @@
 # pyncoin/pychain.py
 
 import hashlib
-import json
 from datetime import datetime, timezone
+
 from bitstring import BitArray
 
 from transaction import Transaction
+from utils import RawSerializable, hex_to_bytes, bytes_to_hex
 
 ''' Implements the business logic of the blockchain. '''
 
-class Block:
+class Block(RawSerializable):
     ''' Represents a block in the blockchain. A block can contain arbitrary data
     in the format of a unicode string. '''
 
@@ -108,33 +109,25 @@ class Block:
             return False
         return True
 
-    def as_dict(self):
+    def to_raw(self):
         return {
             'index': self.index,
             'previous_hash': self.previous_hash.hex() if self.previous_hash is not None else None,
             'timestamp': int(self.timestamp.timestamp()),
-            'data': [tx.as_dict() for tx in self.data],
+            'data': Transaction.to_raw_list(self.data),
             'difficulty': self.difficulty,
             'nonce': self.nonce,
             'hash': self.hash.hex()
         }
 
-    def as_json(self):
-        return json.dumps(self.as_dict())
-
-    @staticmethod
-    def from_dict(json_obj):
-        return Block(index=json_obj['index'], 
-            previous_hash=bytes.fromhex(json_obj['previous_hash']) if json_obj['previous_hash'] is not None else None, 
-            timestamp=datetime.fromtimestamp(json_obj['timestamp'], tz=timezone.utc),
-            data=[Transaction.from_dict(tx) for tx in json_obj['data']],
-            difficulty=json_obj['difficulty'],
-            nonce=json_obj['nonce'])
-
-    @staticmethod
-    def from_json(json_str):
-        json_obj = json.loads(json_str)
-        return Block.from_dict(json_obj)
+    @classmethod
+    def from_raw(cls, raw_obj):
+        return cls(index=raw_obj['index'], 
+            previous_hash=hex_to_bytes(raw_obj['previous_hash']) if raw_obj['previous_hash'] is not None else None, 
+            timestamp=datetime.fromtimestamp(raw_obj['timestamp'], tz=timezone.utc),
+            data=Transaction.from_raw_list(raw_obj['data']),
+            difficulty=raw_obj['difficulty'],
+            nonce=raw_obj['nonce'])
 
     def has_valid_structure(self):
         return (isinstance(self.index, int) 
@@ -151,7 +144,7 @@ class Block:
         return ((previous_block.timestamp - new_block.timestamp).total_seconds() < 60 
             and (new_block.timestamp - datetime.now(tz=timezone.utc)).total_seconds() < 60)
 
-class Blockchain:
+class Blockchain(RawSerializable):
 
     BLOCK_GENERATION_INTERVAL = 10 # in seconds
     DIFFICULTY_ADJUSTMENT_INTERVAL = 10 # in blocks
@@ -219,11 +212,12 @@ class Blockchain:
             print('Received blockchain is invalid.')
             return False
 
-    def as_json(self):
-        return json.dumps(self.as_list())
+    def to_raw(self):
+        return Block.to_raw_list(self.blocks)
 
-    def as_list(self):
-        return [block.as_dict() for block in self.blocks]
+    @classmethod
+    def from_raw(cls, raw_obj):
+        raise AssertionError('Blockchain can not be constructed from raw objects.')
 
     def get_difficulty(self):
         latest_block = self.get_latest()
