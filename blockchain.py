@@ -1,4 +1,4 @@
-# pychain/pychain.py
+# pyncoin/pychain.py
 
 import hashlib
 import json

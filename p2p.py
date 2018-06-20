@@ -1,4 +1,4 @@
-# pychain/p2p.py
+# pyncoin/p2p.py
 
 ''' Implements the p2p node of the blockchain. '''
 

@@ -1,4 +1,6 @@
-# pychain/transaction.py
+# pyncoin/transaction.py
+
+''' Implements a cryptocurrency transaction. '''
 
 import functools
 import hashlib

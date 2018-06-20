@@ -1,10 +1,10 @@
-# pynaive
+# pyncoin
 
-This project is a python port of [Naivecoin](https://github.com/lhartikk/naivecoin), an excellent tutorial that lets you implement a fully functioning blockchain in TypeScript of educational purposes.
+This project is a python port of [Naivecoin](https://github.com/lhartikk/naivecoin), an excellent tutorial that lets you implement a fully functioning blockchain and cryptocurrency in TypeScript for educational purposes.
 
 ## Description
 
-In this repo you find the implementation of a full node for the pynaive blockchain. Only the features strictly necessary to make the node work are implemented. 
+In this repo you find the implementation of a full node for the pyncoin blockchain. Only the features strictly necessary to make the node work are implemented. 
 
 As a user interface the node starts a simple web server that provides the following REST services:
 
@@ -15,20 +15,20 @@ As a user interface the node starts a simple web server that provides the follow
 
 The blockchain is not persisted by the node, it is kept only in the memory.
 
-pynaive also manages a WebSocket interface to communcicate with peer nodes.
+pyncoin also manages a WebSocket interface to communcicate with peer nodes.
 
 ## Getting Started
 
 ### Dependencies
 
-pynaive depends on the following python libraries:
+pyncoin depends on the following python libraries:
 
  - [twisted](https://github.com/twisted/twisted)
  - [autobahn](https://github.com/crossbario/autobahn-python)
  - [flask](https://github.com/pallets/flask)
  - [bitstring](https://github.com/scott-griffiths/bitstring)
 
-pynaive is developed and tested on python 3.
+pyncoin is developed and tested on python 3.
 
 ### Installing
 

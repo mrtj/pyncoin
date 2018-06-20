@@ -1,4 +1,4 @@
-# pychain/server.py
+# pyncoin/server.py
 
 ''' Implements the web server controller interface. '''
 

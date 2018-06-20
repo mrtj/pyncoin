@@ -1,4 +1,4 @@
-# pchain/main.py
+# pyncoin/main.py
 
 ''' Implements the CLI of the blockchain node '''
 
