@@ -58,7 +58,7 @@ class TxOut(RawSerializable):
 
 class TxIn(RawSerializable):
     ''' Transaction input. '''
-    def __init__(self, tx_out_id, tx_out_index, signature):
+    def __init__(self, tx_out_id, tx_out_index, signature=None):
         ''' Initializes the TxIn instance.
         Params:
             - tx_out_id (bytes): The id of the output transaction providing the coins for this transaction.
@@ -73,14 +73,14 @@ class TxIn(RawSerializable):
         return {
             'tx_out_id': bytes_to_hex(self.tx_out_id),
             'tx_out_index': self.tx_out_index,
-            'signature': bytes_to_hex(self.signature)
+            'signature': bytes_to_hex(self.signature) if self.signature is not None else None
         }
 
     @classmethod
     def from_raw(cls, raw_obj):
         tx_out_id = hex_to_bytes(raw_obj['tx_out_id'])
         tx_out_index = raw_obj['tx_out_index']
-        signature = hex_to_bytes(raw_obj['signature'])
+        signature = hex_to_bytes(raw_obj['signature']) if raw_obj['signature'] is not None else None
         return cls(tx_out_id, tx_out_index, signature)
 
     def has_valid_structure(self):
@@ -99,7 +99,8 @@ class TxIn(RawSerializable):
         vk = ecdsa.VerifyingKey.from_string(address)
         result = False
         try:
-            result = vk.verify(self.signature, transaction.id)
+            if self.signature:
+                result = vk.verify(self.signature, transaction.id)
         except ecdsa.BadSignatureError:
             pass
         return result
@@ -189,7 +190,7 @@ class Transaction(RawSerializable):
             hasher.update(int_to_bytes(amount_denom))
         return hasher.digest()
 
-    def sign_inputs(self, tx_in_index, private_key, unspent_tx_outs):
+    def sign_input(self, tx_in_index, private_key, unspent_tx_outs):
         tx_in = self.tx_ins[tx_in_index]
         data_to_sign = self.id
         referenced_unspent_tx_out = UnspentTxOut.find(tx_in.tx_out_id, tx_in.tx_out_index, unspent_tx_outs)
