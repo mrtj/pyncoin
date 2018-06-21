@@ -4,6 +4,7 @@
 
 from blockchain import Block, Blockchain
 from utils import RawSerializable
+from transaction import Transaction
 
 from autobahn.twisted.websocket import WebSocketAdapterProtocol
 from autobahn.websocket.protocol import WebSocketProtocol
@@ -17,6 +18,8 @@ class Message(RawSerializable):
     QUERY_LATEST = 0
     QUERY_ALL = 1
     RESPONSE_BLOCKCHAIN = 2
+    QUERY_TRANSACTION_POOL = 3
+    RESPONSE_TRANSACTION_POOL = 4
 
     def __init__(self, message_type, data):
         ''' Initializes the Message.
@@ -59,6 +62,16 @@ class Message(RawSerializable):
         ''' Creates a new "latest block response" message. '''
         return Message(Message.RESPONSE_BLOCKCHAIN, [blockchain.get_latest().to_raw()])
 
+    @staticmethod
+    def response_transaction_pool_message(tx_pool):
+        ''' Creates a new "transaction pool response" message. '''
+        return Message(Message.RESPONSE_TRANSACTION_POOL, tx_pool.to_raw())
+
+    @staticmethod
+    def query_transaction_pool_message():
+        ''' Creates a new "query transaction pool" message. '''
+        return Message(Message.QUERY_TRANSACTION_POOL, None)
+
 # ----------------------------
 
 class Engine:
@@ -85,6 +98,13 @@ class Engine:
             else:
                 received_blocks = Block.from_raw_list(message.data)
                 self.handle_blockchain_response(channel, received_blocks)
+        elif message.message_type == Message.QUERY_TRANSACTION_POOL:
+            channel.send_message(Message.response_transaction_pool_message(self.blockchain.tx_pool))
+        elif message.message_type == Message.RESPONSE_TRANSACTION_POOL:
+            transactions = Transaction.from_raw_list(message.data)
+            for transaction in transactions:
+                self.blockchain.handle_received_transaction(transaction)
+                channel.broadcast(Message.response_transaction_pool_message(self.blockchain.tx_pool))
         else:
             print('Unknown message type: {}'.format(message.message_type))
 
@@ -112,7 +132,6 @@ class Engine:
                 self.blockchain.replace(received_blocks)
         else:
             print('received blockchain is not longer than current blockchain. Do nothing')
-
 
 class Broadcaster:
     ''' Administers the clients connected to this node and broadcasts messages to all of them.'''
@@ -217,9 +236,7 @@ class ServerFactory(BlockchainFactory, WebSocketServerFactory):
 class ServerProtocol(BlockchainPrototocol, WebSocketServerProtocol):
     pass
 
-
 class ClientFactory(BlockchainFactory, WebSocketClientFactory):
-
     def __init__(self, url, engine, broadcaster):
         BlockchainFactory.__init__(self, engine, broadcaster)
         WebSocketClientFactory.__init__(self, url=url)
@@ -253,3 +270,6 @@ class Application:
 
     def broadcast_latest(self, blockchain):
         self.broadcaster.broadcast(Message.response_latest_message(blockchain))
+
+    def broadcast_transaction_pool(self, tx_pool):
+        self.broadcaster.broadcast(Message.response_transaction_pool_message(tx_pool))

@@ -152,41 +152,50 @@ class Blockchain(RawSerializable):
     BLOCK_GENERATION_INTERVAL = 10 # in seconds
     DIFFICULTY_ADJUSTMENT_INTERVAL = 10 # in blocks
 
-    def __init__(self):
+    def __init__(self, tx_pool):
         self.blocks = [Block.genesis_block()]
         self.p2p_application = None
+        self.tx_pool = tx_pool
         self.unspent_tx_outs = []
 
     def get_latest(self):
         return self.blocks[-1]
 
     @staticmethod
-    def is_valid_chain(blocks):
+    def validate_blocks(blocks):
         if not isinstance(blocks, list):
             print('blocks argument is not a list')
-            return False
+            return None
         elif not Block.is_genesis(blocks[0]):
             print('invalid genesis block')
-            return False
-        for i in range(1, len(blocks)):
-            if not isinstance(blocks[i], Block) or not blocks[i - 1].is_valid_next(blocks[i]):
+            return None
+        unspent_tx_outs = []
+        for i, block in enumerate(blocks):
+            if not isinstance(blocks[i], Block) or i != 0 and not blocks[i - 1].is_valid_next(block):
                 print('block #{} is not valid'.format(i))
-                return False
-        return True
+                return None
+            unspent_tx_outs = Transaction.process_transactions(block.data, unspent_tx_outs, block.index)
+            if unspent_tx_outs is None:
+                print('invalid transactions in blockchain')
+                return None
+        return unspent_tx_outs
 
-    def is_valid(self):
-        return Blockchain.is_valid_chain(self.blocks)
+    @staticmethod
+    def get_accumulated_difficulty(blocks):
+        return sum([2 ** block.difficulty for block in blocks])
 
     def add_block(self, block):
         if not isinstance(block, Block):
             raise ValueError('Invalid block.')
         if not self.get_latest().is_valid_next(block):
             return False
-        result = Transaction.process_transactions(block.data, self.unspent_tx_outs, block.index)
-        if result is None:
+        unspent_tx_outs = Transaction.process_transactions(block.data, self.unspent_tx_outs, block.index)
+        if unspent_tx_outs is None:
+            print('block is not valid in terms of transactions')
             return False
         self.blocks.append(block)
-        self.unspent_tx_outs = result
+        self.unspent_tx_outs = unspent_tx_outs
+        self.tx_pool.update(unspent_tx_outs)
         return True
 
     def generate_raw_next_block(self, data):
@@ -204,7 +213,8 @@ class Blockchain(RawSerializable):
 
     def generate_next_block(self, wallet):
         coinbase_tx = Transaction.coinbase(wallet.get_public_key(), self.get_latest().index + 1)
-        block_data = [coinbase_tx]
+        block_data = [coinbase_tx] + self.tx_pool.transactions
+        print('block_data: {}'.format(block_data))
         return self.generate_raw_next_block(block_data)
 
     def generate_next_with_transaction(self, wallet, receiver_address, amount):
@@ -213,9 +223,21 @@ class Blockchain(RawSerializable):
         if not isinstance(amount, Decimal):
             raise ValueError('invalid amount')
         coinbase_tx = Transaction.coinbase(wallet.get_public_key(), self.get_latest().index + 1)
-        tx = wallet.create_transaction(receiver_address, amount, self.unspent_tx_outs)
+        tx = wallet.create_transaction(receiver_address, amount, self.unspent_tx_outs, self.tx_pool)
         block_data = [coinbase_tx, tx]
         return self.generate_raw_next_block(block_data)
+
+    def send_transaction(self, wallet, receiver_address, amount):
+        tx = wallet.create_transaction(receiver_address, amount, self.unspent_tx_outs, self.tx_pool)
+        self.tx_pool.add_transaction(tx, self.unspent_tx_outs)
+        self.broadcast_transaction_pool()
+        return tx
+
+    def my_unspent_tx_outs(self, wallet):
+        return wallet.my_unspent_tx_outs(self.unspent_tx_outs)
+
+    def handle_received_transaction(self, transaction):
+        self.tx_pool.add_transaction(transaction, self.unspent_tx_outs)
 
     def get_balance(self, wallet):
         return wallet.get_balance(self.unspent_tx_outs)
@@ -223,12 +245,19 @@ class Blockchain(RawSerializable):
     def broadcast_latest(self):
         self.p2p_application.broadcast_latest(self)
 
+    def broadcast_transaction_pool(self):
+        self.p2p_application.broadcast_transaction_pool(self.tx_pool)
+
     def replace(self, new_blocks):
-        if (isinstance(new_blocks, list) 
-            and Blockchain.is_valid_chain(new_blocks) 
-            and len(new_blocks) > len(self.blocks)):
+        unspent_tx_outs = Blockchain.validate_blocks(new_blocks)
+        valid_chain = unspent_tx_outs is not None
+        if (isinstance(new_blocks, list)
+            and valid_chain
+            and Blockchain.get_accumulated_difficulty(new_blocks) > Blockchain.get_accumulated_difficulty(self.blocks)):
             print('Received blockchain is valid. Replacing current blockchain with received blockchain.')
             self.blocks = new_blocks
+            self.unspent_tx_outs = unspent_tx_outs
+            self.tx_pool.update(unspent_tx_outs)
             self.broadcast_latest()
             return True
         else:

@@ -84,6 +84,10 @@ class RawSerializable:
         return { key: self.__class__.value_to_raw(value) 
                     for key, value in self.__dict__.items() }
 
+    def __eq__(self, other):
+        return (isinstance(self, other.__class__)
+            and self.to_raw() == other.to_raw())
+
     @classmethod
     def value_from_raw(cls, raw_value):
         ''' Converts a raw value to the instances of this class or a list of instances

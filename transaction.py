@@ -31,6 +31,11 @@ class TxOut(RawSerializable):
         self.address = address
         self.amount = amount
 
+    def __eq__(self, other):
+        return (isinstance(other, self.__class__)
+            and self.address == other.address
+            and self.amount == other.amount)
+
     def to_raw(self):
         return {
             'address': bytes_to_hex(self.address),
@@ -69,6 +74,11 @@ class TxIn(RawSerializable):
         self.tx_out_index = tx_out_index
         self.signature = signature
 
+    def __eq__(self, other):
+        return (isinstance(self, other.__class__)
+            and self.tx_out_id == other.tx_out_id
+            and self.tx_out_index == other.tx_out_index)
+
     def to_raw(self):
         return {
             'tx_out_id': bytes_to_hex(self.tx_out_id),
@@ -98,6 +108,8 @@ class TxIn(RawSerializable):
         address = referenced_uTxO.address
         vk = ecdsa.VerifyingKey.from_string(address)
         result = False
+        print('validating tx_in signature: {}, address: {}, data: {}'
+            .format(bytes_to_hex(self.signature), bytes_to_hex(address), bytes_to_hex(transaction.id)))
         try:
             if self.signature:
                 result = vk.verify(self.signature, transaction.id)
@@ -129,6 +141,16 @@ class UnspentTxOut(RawSerializable):
         self.tx_out_index = tx_out_index
         self.address = address
         self.amount = amount
+
+    def __eq__(self, other):
+        return (isinstance(other, self.__class__)
+            and self.tx_out_id == other.tx_out_id
+            and self.tx_out_index == other.tx_out_index
+            and self.address == other.address
+            and self.amount == other.amount)
+
+    def matches_tx_in(self, tx_in):
+        return self.tx_out_id == tx_in.tx_out_id and self.tx_out_index == tx_in.tx_out_index
 
     @staticmethod
     def find(transaction_id, index, unspent_tx_outs):
@@ -181,6 +203,11 @@ class Transaction(RawSerializable):
         self.tx_outs = tx_outs
         self.id = identifier if identifier is not None else self.get_id()
 
+    def __eq__(self, other):
+        return (isinstance(other, self.__class__) 
+            and self.tx_ins == other.tx_ins
+            and self.tx_outs == other.tx_outs)
+
     def to_raw(self):
         return {
             'tx_ins': TxIn.to_raw_list(self.tx_ins),
@@ -219,9 +246,12 @@ class Transaction(RawSerializable):
             print('trying to sign an input with private ' +
                   ' key that does not match the address that is referenced in txIn')
             raise AssertionError('invalid private key')
-        secexp = bytes_to_int(private_key)
-        sk = ecdsa.SigningKey.from_secret_exponent(secexp)
-        return sk.sign(data_to_sign)
+        print('signing data: {} for public key: {}'
+            .format(bytes_to_hex(data_to_sign), bytes_to_hex(get_public_key(private_key))))
+        sk = ecdsa.SigningKey.from_string(private_key)
+        signature = sk.sign(data_to_sign)
+        print('signature: {}'.format(bytes_to_hex(signature)))
+        return signature
 
     def has_valid_structure(self):
         return (isinstance(self.id, bytes)

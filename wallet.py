@@ -81,16 +81,20 @@ class Wallet:
             tx_outs.append(left_over_tx_out)
         return tx_outs
 
-    def create_transaction(self, receiver_address, amount, unspent_tx_outs):
+    def create_transaction(self, receiver_address, amount, unspent_tx_outs, tx_pool):
         amount = Decimal(amount)
         my_address = self.get_public_key()
         private_key = self.get_private_key()
-        my_unspent_tx_outs = [uTxO for uTxO in unspent_tx_outs if uTxO.address == my_address]
-        (included_unspent_tx_outs, left_over_amount) = \
-            Wallet.find_tx_outs_for_amount(amount, my_unspent_tx_outs)
-        unsigned_tx_ins = [TxIn(uTxO.tx_out_id, uTxO.tx_out_index) for uTxO in included_unspent_tx_outs]
+        my_uTxOs = [uTxO for uTxO in unspent_tx_outs if uTxO.address == my_address]
+        filtered_my_uTxOs = tx_pool.filtered_unspent_tx_outs(my_uTxOs)
+        (included_uTxOs, left_over_amount) = Wallet.find_tx_outs_for_amount(amount, filtered_my_uTxOs)
+        unsigned_tx_ins = [TxIn(uTxO.tx_out_id, uTxO.tx_out_index) for uTxO in included_uTxOs]
         tx_outs = self.create_tx_outs(receiver_address, amount, left_over_amount)
         tx = Transaction(unsigned_tx_ins, tx_outs)
         for index, tx_in in enumerate(tx.tx_ins):
             tx_in.signature = tx.sign_input(index, private_key, unspent_tx_outs)
         return tx
+
+    def my_unspent_tx_outs(self, unspent_tx_outs):
+        my_address = self.get_public_key()
+        return [uTxO for uTxO in unspent_tx_outs if uTxO.address == my_address]

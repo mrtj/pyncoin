@@ -13,6 +13,7 @@ from webserver import app as web_app
 from p2p import Application as P2PApplication
 from blockchain import Blockchain
 from wallet import Wallet
+from transaction_pool import TransactionPool
 from utils import bytes_to_hex
 
 from twisted.internet.defer import setDebugging
@@ -33,7 +34,8 @@ if __name__ == '__main__':
                         default='wallet/pk.pem', type=str)
     args = parser.parse_args()
 
-    blockchain = Blockchain()
+    tx_pool = TransactionPool()
+    blockchain = Blockchain(tx_pool)
     wallet = Wallet(args.key_location)
     p2p_application = P2PApplication(blockchain)
     blockchain.p2p_application = p2p_application
