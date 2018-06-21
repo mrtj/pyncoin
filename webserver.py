@@ -2,8 +2,11 @@
 
 ''' Implements the web server controller interface. '''
 
+from decimal import Decimal
+
 from flask import Flask, request, jsonify, abort
 from blockchain import Block, Blockchain
+from utils import hex_to_bytes
 
 class BlockchainFlask(Flask):
 
@@ -11,19 +14,14 @@ class BlockchainFlask(Flask):
         super().__init__(*args)
         self.blockchain = None
         self.p2p_application = None
+        self.wallet = None
 
 app = BlockchainFlask(__name__)
 
 @app.route('/blocks')
 def blocks():
     print('/blocks')
-    return jsonify(app.blockchain.as_list())
-
-@app.route('/mineBlock', methods=['POST'])
-def mine_block():
-    print('/mineBlock')
-    new_block = app.blockchain.generate_next(request.form['data'])
-    return jsonify(new_block.as_dict())
+    return jsonify(app.blockchain.to_raw())
 
 @app.route('/peers')
 def get_peers():
@@ -34,5 +32,32 @@ def get_peers():
 def add_peer():
     address = request.form['peer']
     print('addPeer: {}'.format(address))
-    app.p2p_application.connect_to_peer(address)
-    return jsonify(True)
+    result = app.p2p_application.connect_to_peer(address)
+    return jsonify(result)
+
+@app.route('/mineRawBlock', methods=['POST'])
+def mine_raw_block():
+    print('/mineRawBlock')
+    data = request.form['data']
+    block = app.blockchain.generate_raw_next_block(data)
+    return jsonify(block.to_raw() if block else None)
+
+@app.route('/mineBlock', methods=['POST'])
+def mine_block():
+    print('/mineBlock')
+    block = app.blockchain.generate_next_block(app.wallet)
+    return jsonify(block.to_raw() if block else None)
+
+@app.route('/mineTransaction', methods=['POST'])
+def mine_transaction():
+    print('/mineTransaction')
+    address = hex_to_bytes(request.form['address'])
+    amount = Decimal(request.form['amount'])
+    block = app.blockchain.generate_next_with_transaction(app.wallet, address, amount)
+    return jsonify(block.to_raw() if block else None)
+
+@app.route('/balance')
+def get_balance():
+    print('/balance')
+    balance = app.blockchain.get_balance(app.wallet)
+    return jsonify({'balance': balance})

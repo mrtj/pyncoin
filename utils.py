@@ -1,15 +1,12 @@
 # pyncoin/utils.py
 
 import binascii
+import decimal
 
 try:
     import simplejson as json
 except ImportError:
     import json
-    HAS_SIMPLEJSON = False
-else:
-    HAS_SIMPLEJSON = True
-
 
 ''' Utility functions '''
 
@@ -176,7 +173,7 @@ class RawSerializable:
 
         Returns (list or cls): An instance or a list of instances of this class.
         '''
-        raw = json.loads(json_str, use_decimal=True) if HAS_SIMPLEJSON else json.loads(json_str)
+        raw = json.loads(json_str, parse_float=decimal.Decimal)
         return cls.value_from_raw(raw)
 
     def to_bin(self):
@@ -187,3 +184,6 @@ class RawSerializable:
     def from_bin(cls, json_bin):
         ''' Returns a new instance initialized from the binary format. '''
         return cls.from_json(json_bin.decode('utf-8'))
+
+    def __repr__(self):
+        return self.to_json()

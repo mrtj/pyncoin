@@ -40,7 +40,7 @@ class TxOut(RawSerializable):
     @classmethod
     def from_raw(cls, raw_obj):
         address = hex_to_bytes(raw_obj['address'])
-        amount = raw_obj['amount']
+        amount = raw_obj['amount'] if isinstance(raw_obj['amount'], Decimal) else Decimal(raw_obj['amount'])
         return cls(address, amount)
 
     @staticmethod
@@ -91,7 +91,7 @@ class TxIn(RawSerializable):
 
     def validate(self, transaction, unspent_tx_outs):
         condition = lambda uTxO: uTxO.tx_out_id == self.tx_out_id and uTxO.tx_out_id == self.tx_out_id
-        referenced_uTxO = next([uTxO for uTxO in unspent_tx_outs if condition(uTxO)], None)
+        referenced_uTxO = next((uTxO for uTxO in unspent_tx_outs if condition(uTxO)), None)
         if not referenced_uTxO:
             print('referenced tx_out not found: {}'.format(self.__dict__))
             return False
@@ -102,6 +102,7 @@ class TxIn(RawSerializable):
             if self.signature:
                 result = vk.verify(self.signature, transaction.id)
         except ecdsa.BadSignatureError:
+            print('bad signature for tx_in: {}'.format(self))
             pass
         return result
     
@@ -121,7 +122,7 @@ class TxIn(RawSerializable):
                 groups.add(tx_key)
         return False
 
-class UnspentTxOut:
+class UnspentTxOut(RawSerializable):
     ''' Unspent transaction outputs. '''
     def __init__(self, tx_out_id, tx_out_index, address, amount):
         self.tx_out_id = tx_out_id
@@ -146,8 +147,24 @@ class UnspentTxOut:
             ]
         consumed = lambda uTxO: UnspentTxOut.find(uTxO.tx_out_id, uTxO.tx_out_index, consumed_tx_outs)
         resulting_unspent_tx_outs = [uTxO for uTxO in current_unspent_tx_outs if not consumed(uTxO)]
-        resulting_unspent_tx_outs.append(new_unspent_tx_outs)
+        resulting_unspent_tx_outs.extend(new_unspent_tx_outs)
         return resulting_unspent_tx_outs
+
+    def to_raw(self):
+        return {
+            'tx_out_id': bytes_to_hex(self.tx_out_id),
+            'tx_out_index': self.tx_out_index,
+            'address': bytes_to_hex(self.address),
+            'amount': self.amount
+        }
+
+    @classmethod
+    def from_raw(cls, raw_obj):
+        tx_out_id = hex_to_bytes(raw_obj['tx_out_id'])
+        tx_out_index = raw_obj['tx_out_index']
+        address = hex_to_bytes(raw_obj['address'])
+        amount = raw_obj['amount'] if isinstance(raw_obj['amount'], Decimal) else Decimal(raw_obj['amount'])
+        return cls(tx_out_id, tx_out_index, address, amount)
 
 class Transaction(RawSerializable):
     ''' A transaction.'''
@@ -216,16 +233,16 @@ class Transaction(RawSerializable):
 
     def validate(self, unspent_tx_outs):
         if self.id != self.get_id():
-            print('invalid tx id: {}'.format(self.id))
+            print('invalid tx id: {}'.format(self))
             return False
         has_valid_tx_ins = all([tx_in.validate(self, unspent_tx_outs) for tx_in in self.tx_ins])
         if not has_valid_tx_ins:
-            print('some of tx_ins are invalid in tx: {}'.format(self.id))
+            print('some of tx_ins are invalid in tx: {}'.format(self))
             return False
-        total_tx_in_values = sum([tx_in.get_amount() for tx_in in self.tx_ins])
+        total_tx_in_values = sum([tx_in.get_amount(unspent_tx_outs) for tx_in in self.tx_ins])
         total_tx_out_values = sum([tx_out.amount for tx_out in self.tx_outs])
         if total_tx_in_values != total_tx_out_values:
-            print('total_tx_in_values != total_tx_out_values in tx: {}'.format(self.id))
+            print('total_tx_in_values != total_tx_out_values in tx: {}'.format(self))
             return False
         return True
 

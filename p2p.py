@@ -134,7 +134,7 @@ class Broadcaster:
             self.clients.remove(client)
 
     def broadcast(self, message):
-        print("broadcasting message '{}' ..".format(message.to_raw()))
+        print("broadcasting message '{}' ..".format(message))
         if not self.clients:
             return
         preparedMsg = self.clients[0].factory.prepareMessage(message.to_bin())
@@ -243,6 +243,7 @@ class Application:
         client_factory = ClientFactory(url, self.engine, self.broadcaster)
         client_factory.protocol = ClientProtocol
         connectWS(client_factory)
+        return url
 
     def peers(self):
         return self.broadcaster.peers()

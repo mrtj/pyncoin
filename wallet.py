@@ -2,6 +2,7 @@
 ''' Implements the pyncoin wallet, a high-level user interface for pyncoin transactions. '''
 
 import os
+from decimal import Decimal
 
 import ecdsa
 from transaction import Transaction, TxIn, TxOut
@@ -45,8 +46,7 @@ class Wallet:
     def get_private_key(self):
         return self.private_key.to_string()
 
-    @staticmethod
-    def get_balance(address, unspent_tx_outs):
+    def get_balance(self, unspent_tx_outs):
         ''' Gets the balance of a given address.
 
         Params:
@@ -56,11 +56,12 @@ class Wallet:
         
         Returns (Decimal): The balance of the given address
         '''
-        return sum([uTxO.amount for uTxO in unspent_tx_outs if uTxO.address == address])
+        return sum([uTxO.amount for uTxO in unspent_tx_outs if uTxO.address == self.get_public_key()])
 
     @staticmethod
     def find_tx_outs_for_amount(amount, my_unspent_tx_outs):
-        current_amount = 0
+        amount = Decimal(amount)
+        current_amount = Decimal(0)
         included_unspent_tx_outs = []
         for my_unspent_tx_out in my_unspent_tx_outs:
             included_unspent_tx_outs.append(my_unspent_tx_out)
@@ -71,6 +72,7 @@ class Wallet:
         raise AssertionError('not enough coins to send transaction')
 
     def create_tx_outs(self, receiver_address, amount, left_over_amount):
+        amount = Decimal(amount)
         tx_out_1 = TxOut(receiver_address, amount)
         tx_outs = [tx_out_1]
         if left_over_amount > 0:
@@ -80,6 +82,7 @@ class Wallet:
         return tx_outs
 
     def create_transaction(self, receiver_address, amount, unspent_tx_outs):
+        amount = Decimal(amount)
         my_address = self.get_public_key()
         private_key = self.get_private_key()
         my_unspent_tx_outs = [uTxO for uTxO in unspent_tx_outs if uTxO.address == my_address]

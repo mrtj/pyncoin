@@ -2,10 +2,11 @@
 
 import hashlib
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from bitstring import BitArray
 
-from transaction import Transaction
+from transaction import Transaction, TxOut
 from utils import RawSerializable, hex_to_bytes, bytes_to_hex
 
 ''' Implements the business logic of the blockchain. '''
@@ -122,12 +123,14 @@ class Block(RawSerializable):
 
     @classmethod
     def from_raw(cls, raw_obj):
-        return cls(index=raw_obj['index'], 
-            previous_hash=hex_to_bytes(raw_obj['previous_hash']) if raw_obj['previous_hash'] is not None else None, 
-            timestamp=datetime.fromtimestamp(raw_obj['timestamp'], tz=timezone.utc),
-            data=Transaction.from_raw_list(raw_obj['data']),
-            difficulty=raw_obj['difficulty'],
-            nonce=raw_obj['nonce'])
+        index = raw_obj['index']
+        previous_hash = hex_to_bytes(raw_obj['previous_hash']) if raw_obj['previous_hash'] is not None else None
+        timestamp = datetime.fromtimestamp(raw_obj['timestamp'], tz=timezone.utc)
+        data = Transaction.from_raw_list(raw_obj['data'])
+        difficulty = raw_obj['difficulty']
+        nonce = raw_obj['nonce']
+        return cls(index=index, previous_hash=previous_hash, timestamp=timestamp, 
+                   data=data, difficulty=difficulty, nonce=nonce)
 
     def has_valid_structure(self):
         return (isinstance(self.index, int) 
@@ -186,16 +189,36 @@ class Blockchain(RawSerializable):
         self.unspent_tx_outs = result
         return True
 
-    def generate_next(self, data):
+    def generate_raw_next_block(self, data):
         previous_block = self.get_latest()
         next_index = previous_block.index + 1
         next_timestamp = datetime.now(tz=timezone.utc)
         difficulty = self.get_difficulty()
         print('Blockchain.generate_next: difficulty = {}'.format(difficulty))
         next_block = Block.find(next_index, previous_block.hash, next_timestamp, data, difficulty)
-        self.add_block(next_block)
-        self.broadcast_latest()
-        return next_block
+        if self.add_block(next_block):
+            self.broadcast_latest()
+            return next_block
+        else:
+            return None
+
+    def generate_next_block(self, wallet):
+        coinbase_tx = Transaction.coinbase(wallet.get_public_key(), self.get_latest().index + 1)
+        block_data = [coinbase_tx]
+        return self.generate_raw_next_block(block_data)
+
+    def generate_next_with_transaction(self, wallet, receiver_address, amount):
+        if not TxOut.is_valid_address(receiver_address):
+            raise ValueError('invalid address')
+        if not isinstance(amount, Decimal):
+            raise ValueError('invalid amount')
+        coinbase_tx = Transaction.coinbase(wallet.get_public_key(), self.get_latest().index + 1)
+        tx = wallet.create_transaction(receiver_address, amount, self.unspent_tx_outs)
+        block_data = [coinbase_tx, tx]
+        return self.generate_raw_next_block(block_data)
+
+    def get_balance(self, wallet):
+        return wallet.get_balance(self.unspent_tx_outs)
 
     def broadcast_latest(self):
         self.p2p_application.broadcast_latest(self)
