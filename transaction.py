@@ -8,6 +8,7 @@ from decimal import Decimal
 
 import ecdsa
 from utils import RawSerializable, bytes_to_int, int_to_bytes, bytes_to_hex, hex_to_bytes
+from utils import BadRequestError, UnauthorizedError
 
 def get_public_key(private_key):
     ''' Gets the public key from the private key.
@@ -100,7 +101,7 @@ class TxIn(RawSerializable):
         )
 
     def validate(self, transaction, unspent_tx_outs):
-        condition = lambda uTxO: uTxO.tx_out_id == self.tx_out_id and uTxO.tx_out_id == self.tx_out_id
+        condition = lambda uTxO: uTxO.tx_out_id == self.tx_out_id and uTxO.tx_out_index == self.tx_out_index
         referenced_uTxO = next((uTxO for uTxO in unspent_tx_outs if condition(uTxO)), None)
         if not referenced_uTxO:
             print('referenced tx_out not found: {}'.format(self.__dict__))
@@ -108,7 +109,7 @@ class TxIn(RawSerializable):
         address = referenced_uTxO.address
         vk = ecdsa.VerifyingKey.from_string(address)
         result = False
-        print('validating tx_in signature: {}, address: {}, data: {}'
+        print('validating tx_in signature: {}\naddress: {}\ndata: {}'
             .format(bytes_to_hex(self.signature), bytes_to_hex(address), bytes_to_hex(transaction.id)))
         try:
             if self.signature:
@@ -240,13 +241,13 @@ class Transaction(RawSerializable):
         referenced_unspent_tx_out = UnspentTxOut.find(tx_in.tx_out_id, tx_in.tx_out_index, unspent_tx_outs)
         if not referenced_unspent_tx_out:
             print('could not find referenced txOut')
-            raise AssertionError('could not find referenced txOut')
+            raise BadRequestError('could not find referenced txOut')
         referenced_address = referenced_unspent_tx_out.address
         if get_public_key(private_key) != referenced_address:
             print('trying to sign an input with private ' +
                   ' key that does not match the address that is referenced in txIn')
-            raise AssertionError('invalid private key')
-        print('signing data: {} for public key: {}'
+            raise UnauthorizedError('invalid private key')
+        print('signing data: {}\nfor address: {}'
             .format(bytes_to_hex(data_to_sign), bytes_to_hex(get_public_key(private_key))))
         sk = ecdsa.SigningKey.from_string(private_key)
         signature = sk.sign(data_to_sign)

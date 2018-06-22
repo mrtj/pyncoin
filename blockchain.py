@@ -8,6 +8,7 @@ from bitstring import BitArray
 
 from transaction import Transaction, TxOut
 from utils import RawSerializable, hex_to_bytes, bytes_to_hex
+from utils import BadRequestError
 
 ''' Implements the business logic of the blockchain. '''
 
@@ -186,7 +187,7 @@ class Blockchain(RawSerializable):
 
     def add_block(self, block):
         if not isinstance(block, Block):
-            raise ValueError('Invalid block.')
+            raise BadRequestError('invalid block', payload=block.to_raw())
         if not self.get_latest().is_valid_next(block):
             return False
         unspent_tx_outs = Transaction.process_transactions(block.data, self.unspent_tx_outs, block.index)
@@ -219,9 +220,11 @@ class Blockchain(RawSerializable):
 
     def generate_next_with_transaction(self, wallet, receiver_address, amount):
         if not TxOut.is_valid_address(receiver_address):
-            raise ValueError('invalid address')
+            error_payload = {'address': bytes_to_hex(receiver_address)}
+            raise BadRequestError('invalid address', payload=error_payload)
         if not isinstance(amount, Decimal):
-            raise ValueError('invalid amount')
+            error_payload = {'amount': amount}
+            raise BadRequestError('invalid amount', payload=error_payload)
         coinbase_tx = Transaction.coinbase(wallet.get_public_key(), self.get_latest().index + 1)
         tx = wallet.create_transaction(receiver_address, amount, self.unspent_tx_outs, self.tx_pool)
         block_data = [coinbase_tx, tx]
@@ -229,15 +232,17 @@ class Blockchain(RawSerializable):
 
     def send_transaction(self, wallet, receiver_address, amount):
         tx = wallet.create_transaction(receiver_address, amount, self.unspent_tx_outs, self.tx_pool)
-        self.tx_pool.add_transaction(tx, self.unspent_tx_outs)
-        self.broadcast_transaction_pool()
+        if self.tx_pool.add_transaction(tx, self.unspent_tx_outs):
+            self.broadcast_transaction_pool()
+        else:
+            raise BadRequestError('invalid transaction or transaction is already in the pool')
         return tx
 
     def my_unspent_tx_outs(self, wallet):
         return wallet.my_unspent_tx_outs(self.unspent_tx_outs)
 
     def handle_received_transaction(self, transaction):
-        self.tx_pool.add_transaction(transaction, self.unspent_tx_outs)
+        return self.tx_pool.add_transaction(transaction, self.unspent_tx_outs)
 
     def get_balance(self, wallet):
         return wallet.get_balance(self.unspent_tx_outs)

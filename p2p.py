@@ -3,7 +3,7 @@
 ''' Implements the p2p node of the blockchain. '''
 
 from blockchain import Block, Blockchain
-from utils import RawSerializable
+from utils import RawSerializable, format_exception
 from transaction import Transaction
 
 from autobahn.twisted.websocket import WebSocketAdapterProtocol
@@ -103,8 +103,8 @@ class Engine:
         elif message.message_type == Message.RESPONSE_TRANSACTION_POOL:
             transactions = Transaction.from_raw_list(message.data)
             for transaction in transactions:
-                self.blockchain.handle_received_transaction(transaction)
-                channel.broadcast(Message.response_transaction_pool_message(self.blockchain.tx_pool))
+                if self.blockchain.handle_received_transaction(transaction):
+                    channel.broadcast(Message.response_transaction_pool_message(self.blockchain.tx_pool))
         else:
             print('Unknown message type: {}'.format(message.message_type))
 
@@ -153,7 +153,7 @@ class Broadcaster:
             self.clients.remove(client)
 
     def broadcast(self, message):
-        print("broadcasting message '{}' ..".format(message))
+        print("broadcasting message:\n{}".format(message))
         if not self.clients:
             return
         preparedMsg = self.clients[0].factory.prepareMessage(message.to_bin())
@@ -206,7 +206,10 @@ class BlockchainPrototocol(WebSocketAdapterProtocol, WebSocketProtocol, IChannel
         message = Message.from_bin(payload)
         print('Received message: {}'.format(message.to_raw()))
         # pylint: disable=maybe-no-member
-        self.factory.engine.handle_message(self, message)
+        try:
+            self.factory.engine.handle_message(self, message)
+        except Exception as ex:
+            print(format_exception(ex))
 
     def onClose(self, wasClean, code, reason):
         print("WebSocket connection closed: {0}".format(reason))

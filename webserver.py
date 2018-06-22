@@ -7,7 +7,7 @@ from decimal import Decimal
 from flask import Flask, request, jsonify, abort
 from blockchain import Block, Blockchain
 from transaction import Transaction, UnspentTxOut
-from utils import hex_to_bytes, bytes_to_hex
+from utils import hex_to_bytes, bytes_to_hex, HttpError
 
 class BlockchainFlask(Flask):
 
@@ -51,14 +51,14 @@ def get_address():
 
 @app.route('/peers')
 def get_peers():
-    return jsonify(app.p2p_application.peers())
+    return jsonify({'peers': app.p2p_application.peers()})
 
 @app.route('/addPeer', methods=['POST'])
 def add_peer():
     address = request.form['peer']
     print('addPeer: {}'.format(address))
     result = app.p2p_application.connect_to_peer(address)
-    return jsonify(result)
+    return jsonify({'peer_added':result})
 
 # transactions
 
@@ -91,3 +91,9 @@ def send_transaction():
 def get_transaction_pool():
     txs = app.blockchain.tx_pool.transactions
     return jsonify(Transaction.to_raw_list(txs))
+
+@app.errorhandler(HttpError)
+def handle_http_error(error):
+    response = jsonify(error.to_raw())
+    response.status_code = error.status_code
+    return response

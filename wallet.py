@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import ecdsa
 from transaction import Transaction, TxIn, TxOut
+from utils import UnauthorizedError
 
 class Wallet:
 
@@ -69,7 +70,8 @@ class Wallet:
             if current_amount > amount:
                 left_over_amount = current_amount - amount
                 return (included_unspent_tx_outs, left_over_amount)
-        raise AssertionError('not enough coins to send transaction')
+        raise UnauthorizedError('not enough coins to send transaction ' + 
+                                'or there are pending transactions from this address')
 
     def create_tx_outs(self, receiver_address, amount, left_over_amount):
         amount = Decimal(amount)

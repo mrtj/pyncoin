@@ -2,6 +2,7 @@
 
 import binascii
 import decimal
+import traceback
 
 try:
     import simplejson as json
@@ -83,10 +84,6 @@ class RawSerializable:
         '''
         return { key: self.__class__.value_to_raw(value) 
                     for key, value in self.__dict__.items() }
-
-    def __eq__(self, other):
-        return (isinstance(self, other.__class__)
-            and self.to_raw() == other.to_raw())
 
     @classmethod
     def value_from_raw(cls, raw_value):
@@ -191,3 +188,45 @@ class RawSerializable:
 
     def __repr__(self):
         return self.to_json()
+
+    def __eq__(self, other):
+        return isinstance(self, other.__class__) and self.to_raw() == other.to_raw()
+
+    def __hash__(self):
+        return hash(frozenset(self.to_raw()))
+
+class HttpError(Exception, RawSerializable):
+    def __init__(self, message, status_code, payload=None):
+        Exception.__init__(self)
+        self.message = message
+        self.status_code = status_code
+        self.payload = payload
+
+    def to_raw(self):
+        raw = { 'error': self.__class__.__name__, 'message': self.message }
+        if self.payload is not None:
+            raw['payload'] = self.payload
+        return raw
+
+    @classmethod
+    def from_raw(cls, raw_obj):
+        raise AssertionError('HttpError must not be initialized from raw objects.')
+
+class BadRequestError(HttpError):
+    status_code = 400
+    def __init__(self, message, payload=None):
+        HttpError.__init__(self, message, BadRequestError.status_code, payload)
+
+class UnauthorizedError(HttpError):
+    status_code = 401
+    def __init__(self, message, payload=None):
+        HttpError.__init__(self, message, UnauthorizedError.status_code, payload)
+
+class ForbiddenError(HttpError):
+    status_code = 403
+    def __init__(self, message, payload=None):
+        HttpError.__init__(self, message, ForbiddenError.status_code, payload)
+
+def format_exception(ex):
+    fmt = traceback.format_exception(ex.__class__, ex, ex.__traceback__)
+    return ''.join(fmt)

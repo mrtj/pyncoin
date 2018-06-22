@@ -1,7 +1,7 @@
 # pyncoin/transaction_pool.py
 
 from transaction import Transaction
-from utils import RawSerializable
+from utils import RawSerializable, BadRequestError
 
 class TransactionPool(RawSerializable):
 
@@ -10,9 +10,10 @@ class TransactionPool(RawSerializable):
 
     def add_transaction(self, transaction, unspent_tx_outs):
         if not transaction.validate(unspent_tx_outs) or not self.is_valid_transaction(transaction):
-            raise AssertionError('Trying to add invalid transaction to the pool')
+            return False
         print('adding to tx_pool: {}'.format(transaction))
         self.transactions.append(transaction)
+        return True
 
     def ins(self):
         ''' Returns the transaction inputs in this pool. '''
