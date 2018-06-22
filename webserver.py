@@ -3,11 +3,12 @@
 ''' Implements the web server controller interface. '''
 
 from decimal import Decimal
+import pprint
 
 from flask import Flask, request, jsonify, abort
 from blockchain import Block, Blockchain
 from transaction import Transaction, UnspentTxOut
-from utils import hex_to_bytes, bytes_to_hex, HttpError
+from utils import hex_to_bytes, bytes_to_hex, HttpError, get_param
 
 class BlockchainFlask(Flask):
 
@@ -25,10 +26,25 @@ app = BlockchainFlask(__name__)
 def blocks():
     return jsonify(app.blockchain.to_raw())
 
+@app.route('/block/<hash>')
+def get_block(hash):
+    block = app.blockchain.get_block_with_hash(hex_to_bytes(hash))
+    return jsonify(block.to_raw())
+
 @app.route('/unspentTransactionOutputs')
 def get_unspent_transaction_outputs():
     uTxOs = app.blockchain.unspent_tx_outs
     return jsonify(UnspentTxOut.to_raw_list(uTxOs))
+
+@app.route('/transaction/<id>')
+def get_transaction(id):
+    transaction = app.blockchain.get_transaction_with_id(hex_to_bytes(id))
+    return jsonify(transaction.to_raw())
+
+@app.route('/address/<address>')
+def get_address_info(address):
+    uTxOs = app.blockchain.unspent_tx_outs_for_address(hex_to_bytes(address))
+    return jsonify({'unspentTxOuts': UnspentTxOut.to_raw_list(uTxOs)})
 
 # wallet
 
@@ -55,7 +71,8 @@ def get_peers():
 
 @app.route('/addPeer', methods=['POST'])
 def add_peer():
-    address = request.form['peer']
+    data = request.get_json()
+    address = get_param(data, 'peer')
     print('addPeer: {}'.format(address))
     result = app.p2p_application.connect_to_peer(address)
     return jsonify({'peer_added':result})
@@ -64,8 +81,9 @@ def add_peer():
 
 @app.route('/mineRawBlock', methods=['POST'])
 def mine_raw_block():
-    data = request.form['data']
-    block = app.blockchain.generate_raw_next_block(data)
+    data = request.get_json()
+    block_data = get_param(data, 'data')
+    block = app.blockchain.generate_raw_next_block(block_data)
     return jsonify(block.to_raw() if block else None)
 
 @app.route('/mineBlock', methods=['POST'])
@@ -75,15 +93,19 @@ def mine_block():
 
 @app.route('/mineTransaction', methods=['POST'])
 def mine_transaction():
-    address = hex_to_bytes(request.form['address'])
-    amount = Decimal(request.form['amount'])
+    data = request.get_json()
+    address = hex_to_bytes(get_param(data, 'address'))
+    amount = Decimal(get_param(data, 'amount'))
     block = app.blockchain.generate_next_with_transaction(app.wallet, address, amount)
     return jsonify(block.to_raw() if block else None)
 
 @app.route('/sendTransaction', methods=['POST'])
 def send_transaction():
-    address = hex_to_bytes(request.form['address'])
-    amount = Decimal(request.form['amount'])
+    data = request.get_json()
+    print('/sendTransaction data: {}'.format(data))
+    address = hex_to_bytes(get_param(data, 'address'))
+    amount = Decimal(get_param(data, 'amount'))
+    print('address: {}, amount: {}'.format(address, amount))
     tx = app.blockchain.send_transaction(app.wallet, address, amount)
     return jsonify(tx.to_raw() if tx else None)
 

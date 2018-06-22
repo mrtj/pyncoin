@@ -97,6 +97,3 @@ class Wallet:
             tx_in.signature = tx.sign_input(index, private_key, unspent_tx_outs)
         return tx
 
-    def my_unspent_tx_outs(self, unspent_tx_outs):
-        my_address = self.get_public_key()
-        return [uTxO for uTxO in unspent_tx_outs if uTxO.address == my_address]

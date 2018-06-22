@@ -82,15 +82,15 @@ class TxIn(RawSerializable):
 
     def to_raw(self):
         return {
-            'tx_out_id': bytes_to_hex(self.tx_out_id),
-            'tx_out_index': self.tx_out_index,
+            'txOutId': bytes_to_hex(self.tx_out_id),
+            'txOutIndex': self.tx_out_index,
             'signature': bytes_to_hex(self.signature) if self.signature is not None else None
         }
 
     @classmethod
     def from_raw(cls, raw_obj):
-        tx_out_id = hex_to_bytes(raw_obj['tx_out_id'])
-        tx_out_index = raw_obj['tx_out_index']
+        tx_out_id = hex_to_bytes(raw_obj['txOutId'])
+        tx_out_index = raw_obj['txOutIndex']
         signature = hex_to_bytes(raw_obj['signature']) if raw_obj['signature'] is not None else None
         return cls(tx_out_id, tx_out_index, signature)
 
@@ -175,16 +175,16 @@ class UnspentTxOut(RawSerializable):
 
     def to_raw(self):
         return {
-            'tx_out_id': bytes_to_hex(self.tx_out_id),
-            'tx_out_index': self.tx_out_index,
+            'txOutId': bytes_to_hex(self.tx_out_id),
+            'txOutIndex': self.tx_out_index,
             'address': bytes_to_hex(self.address),
             'amount': self.amount
         }
 
     @classmethod
     def from_raw(cls, raw_obj):
-        tx_out_id = hex_to_bytes(raw_obj['tx_out_id'])
-        tx_out_index = raw_obj['tx_out_index']
+        tx_out_id = hex_to_bytes(raw_obj['txOutId'])
+        tx_out_index = raw_obj['txOutIndex']
         address = hex_to_bytes(raw_obj['address'])
         amount = raw_obj['amount'] if isinstance(raw_obj['amount'], Decimal) else Decimal(raw_obj['amount'])
         return cls(tx_out_id, tx_out_index, address, amount)
@@ -211,15 +211,15 @@ class Transaction(RawSerializable):
 
     def to_raw(self):
         return {
-            'tx_ins': TxIn.to_raw_list(self.tx_ins),
-            'tx_outs': TxOut.to_raw_list(self.tx_outs),
+            'txIns': TxIn.to_raw_list(self.tx_ins),
+            'txOuts': TxOut.to_raw_list(self.tx_outs),
             'id': bytes_to_hex(self.id)
         }
 
     @classmethod
     def from_raw(cls, raw_obj):
-        tx_ins = TxIn.from_raw_list(raw_obj['tx_ins'])
-        tx_outs = TxOut.from_raw_list(raw_obj['tx_outs'])
+        tx_ins = TxIn.from_raw_list(raw_obj['txIns'])
+        tx_outs = TxOut.from_raw_list(raw_obj['txOuts'])
         identifier = hex_to_bytes(raw_obj['id'])
         return cls(tx_ins, tx_outs, identifier)
 

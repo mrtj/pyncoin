@@ -8,7 +8,7 @@ from bitstring import BitArray
 
 from transaction import Transaction, TxOut
 from utils import RawSerializable, hex_to_bytes, bytes_to_hex
-from utils import BadRequestError
+from utils import BadRequestError, NotFoundError
 
 ''' Implements the business logic of the blockchain. '''
 
@@ -51,8 +51,11 @@ class Block(RawSerializable):
             hasher.update(previous_hash)
         ts_int = int(timestamp.timestamp())
         hasher.update(ts_int.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
-        for tx in data:
-            hasher.update(tx.get_id())
+        if isinstance(data, list):
+            for tx in data:
+                hasher.update(tx.get_id())
+        else:
+            hasher.update(repr(data).encode('utf-8'))
         hasher.update(difficulty.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
         hasher.update(nonce.to_bytes(Block.INT_SIZE, byteorder=Block.BYTE_ORDER))
         return hasher.digest()
@@ -114,7 +117,7 @@ class Block(RawSerializable):
     def to_raw(self):
         return {
             'index': self.index,
-            'previous_hash': self.previous_hash.hex() if self.previous_hash is not None else None,
+            'previousHash': self.previous_hash.hex() if self.previous_hash is not None else None,
             'timestamp': int(self.timestamp.timestamp()),
             'data': Transaction.to_raw_list(self.data),
             'difficulty': self.difficulty,
@@ -125,7 +128,7 @@ class Block(RawSerializable):
     @classmethod
     def from_raw(cls, raw_obj):
         index = raw_obj['index']
-        previous_hash = hex_to_bytes(raw_obj['previous_hash']) if raw_obj['previous_hash'] is not None else None
+        previous_hash = hex_to_bytes(raw_obj['previousHash']) if raw_obj['previousHash'] is not None else None
         timestamp = datetime.fromtimestamp(raw_obj['timestamp'], tz=timezone.utc)
         data = Transaction.from_raw_list(raw_obj['data'])
         difficulty = raw_obj['difficulty']
@@ -238,8 +241,11 @@ class Blockchain(RawSerializable):
             raise BadRequestError('invalid transaction or transaction is already in the pool')
         return tx
 
+    def unspent_tx_outs_for_address(self, address):
+        return [uTxO for uTxO in self.unspent_tx_outs if uTxO.address == address]
+
     def my_unspent_tx_outs(self, wallet):
-        return wallet.my_unspent_tx_outs(self.unspent_tx_outs)
+        return self.unspent_tx_outs_for_address(wallet.get_public_key())
 
     def handle_received_transaction(self, transaction):
         return self.tx_pool.add_transaction(transaction, self.unspent_tx_outs)
@@ -252,6 +258,18 @@ class Blockchain(RawSerializable):
 
     def broadcast_transaction_pool(self):
         self.p2p_application.broadcast_transaction_pool(self.tx_pool)
+
+    def get_block_with_hash(self, hash):
+        block = next((block for block in self.blocks if block.hash == hash), None)
+        if not block:
+            raise NotFoundError('block not found', {'hash': bytes_to_hex(hash)})
+        return block
+
+    def get_transaction_with_id(self, transaction_id):
+        transaction = next((tx for block in self.blocks for tx in block.data if tx.id == transaction_id), None)
+        if not transaction:
+            raise NotFoundError('transaction not found', {'id': bytes_to_hex(transaction_id)})
+        return transaction
 
     def replace(self, new_blocks):
         unspent_tx_outs = Blockchain.validate_blocks(new_blocks)

@@ -44,7 +44,12 @@ def hex_to_bytes(hexstr):
             - hexstr (str): The hexadecimal string
         Returns (bytes): The binary data
     '''
-    return binascii.unhexlify(hexstr)
+    try:
+        result = binascii.unhexlify(hexstr)
+    except binascii.Error as e:
+        raise BadRequestError('invalid hex parameter', 
+            {'offending_value': hexstr, 'cause': str(e)})
+    return result
 
 class RawSerializable:
     ''' Base class for raw serializable objects. 
@@ -227,6 +232,18 @@ class ForbiddenError(HttpError):
     def __init__(self, message, payload=None):
         HttpError.__init__(self, message, ForbiddenError.status_code, payload)
 
+class NotFoundError(HttpError):
+    status_code = 404
+    def __init__(self, message, payload=None):
+        HttpError.__init__(self, message, NotFoundError.status_code, payload)
+
 def format_exception(ex):
     fmt = traceback.format_exception(ex.__class__, ex, ex.__traceback__)
     return ''.join(fmt)
+
+def get_param(params, param_name):
+    MISSING_PARAM_PLACEHOLDER = '$$$missing_param$$$'
+    data = params.get(param_name, MISSING_PARAM_PLACEHOLDER)
+    if data == MISSING_PARAM_PLACEHOLDER:
+        raise BadRequestError('missing parameter', {'parameter': param_name})
+    return data
